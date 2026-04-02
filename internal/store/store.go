@@ -1,12 +1,23 @@
 package store
-import("database/sql";"fmt";"os";"path/filepath";"time";_ "modernc.org/sqlite")
-type DB struct{*sql.DB}
-type Subscription struct{ID int64 `json:"id"`;Endpoint string `json:"endpoint"`;P256DH string `json:"p256dh"`;Auth string `json:"auth"`;UserID string `json:"user_id"`;CreatedAt time.Time `json:"created_at"`}
-type Notification struct{ID int64 `json:"id"`;Title string `json:"title"`;Body string `json:"body"`;URL string `json:"url"`;SentCount int `json:"sent_count"`;CreatedAt time.Time `json:"created_at"`}
-func Open(d string)(*DB,error){os.MkdirAll(d,0755);dsn:=filepath.Join(d,"bellringer.db")+"?_journal_mode=WAL&_busy_timeout=5000";db,err:=sql.Open("sqlite",dsn);if err!=nil{return nil,fmt.Errorf("open: %w",err)};db.SetMaxOpenConns(1);migrate(db);return &DB{db},nil}
-func migrate(db *sql.DB){db.Exec(`CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY AUTOINCREMENT,endpoint TEXT NOT NULL UNIQUE,p256dh TEXT DEFAULT '',auth TEXT DEFAULT '',user_id TEXT DEFAULT '',created_at DATETIME DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,body TEXT DEFAULT '',url TEXT DEFAULT '',sent_count INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)}
-func(db *DB)Subscribe(s *Subscription)error{_,err:=db.Exec(`INSERT INTO subscriptions(endpoint,p256dh,auth,user_id)VALUES(?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh,auth=excluded.auth,user_id=excluded.user_id`,s.Endpoint,s.P256DH,s.Auth,s.UserID);return err}
-func(db *DB)ListSubscriptions()([]Subscription,error){rows,_:=db.Query(`SELECT id,endpoint,p256dh,auth,user_id,created_at FROM subscriptions ORDER BY created_at DESC`);defer rows.Close();var out[]Subscription;for rows.Next(){var s Subscription;rows.Scan(&s.ID,&s.Endpoint,&s.P256DH,&s.Auth,&s.UserID,&s.CreatedAt);out=append(out,s)};return out,nil}
-func(db *DB)SendNotification(n *Notification)(*Notification,error){subs,_:=db.ListSubscriptions();n.SentCount=len(subs);res,err:=db.Exec(`INSERT INTO notifications(title,body,url,sent_count)VALUES(?,?,?,?)`,n.Title,n.Body,n.URL,n.SentCount);if err!=nil{return nil,err};n.ID,_=res.LastInsertId();return n,nil}
-func(db *DB)Unsubscribe(id int64){db.Exec(`DELETE FROM subscriptions WHERE id=?`,id)}
-func(db *DB)Stats()(map[string]interface{},error){var subs,notifs int;db.QueryRow(`SELECT COUNT(*) FROM subscriptions`).Scan(&subs);db.QueryRow(`SELECT COUNT(*) FROM notifications`).Scan(&notifs);return map[string]interface{}{"subscriptions":subs,"notifications_sent":notifs},nil}
+import ("database/sql";"fmt";"os";"path/filepath";"time";_ "modernc.org/sqlite")
+type DB struct{db *sql.DB}
+type Item struct{
+	ID string `json:"id"`
+	Name string `json:"name"`
+	Description string `json:"description"`
+	Status string `json:"status"`
+	Category string `json:"category"`
+	Tags string `json:"tags"`
+	CreatedAt string `json:"created_at"`
+}
+func Open(d string)(*DB,error){if err:=os.MkdirAll(d,0755);err!=nil{return nil,err};db,err:=sql.Open("sqlite",filepath.Join(d,"bellringer.db")+"?_journal_mode=WAL&_busy_timeout=5000");if err!=nil{return nil,err}
+db.Exec(`CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,name TEXT NOT NULL,description TEXT DEFAULT '',status TEXT DEFAULT 'active',category TEXT DEFAULT '',tags TEXT DEFAULT '',created_at TEXT DEFAULT(datetime('now')))`)
+return &DB{db:db},nil}
+func(d *DB)Close()error{return d.db.Close()}
+func genID()string{return fmt.Sprintf("%d",time.Now().UnixNano())}
+func now()string{return time.Now().UTC().Format(time.RFC3339)}
+func(d *DB)Create(e *Item)error{e.ID=genID();e.CreatedAt=now();_,err:=d.db.Exec(`INSERT INTO items(id,name,description,status,category,tags,created_at)VALUES(?,?,?,?,?,?,?)`,e.ID,e.Name,e.Description,e.Status,e.Category,e.Tags,e.CreatedAt);return err}
+func(d *DB)Get(id string)*Item{var e Item;if d.db.QueryRow(`SELECT id,name,description,status,category,tags,created_at FROM items WHERE id=?`,id).Scan(&e.ID,&e.Name,&e.Description,&e.Status,&e.Category,&e.Tags,&e.CreatedAt)!=nil{return nil};return &e}
+func(d *DB)List()[]Item{rows,_:=d.db.Query(`SELECT id,name,description,status,category,tags,created_at FROM items ORDER BY created_at DESC`);if rows==nil{return nil};defer rows.Close();var o []Item;for rows.Next(){var e Item;rows.Scan(&e.ID,&e.Name,&e.Description,&e.Status,&e.Category,&e.Tags,&e.CreatedAt);o=append(o,e)};return o}
+func(d *DB)Delete(id string)error{_,err:=d.db.Exec(`DELETE FROM items WHERE id=?`,id);return err}
+func(d *DB)Count()int{var n int;d.db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&n);return n}
