@@ -21,5 +21,24 @@ func now()string{return time.Now().UTC().Format(time.RFC3339)}
 func(d *DB)Create(e *Notification)error{e.ID=genID();e.CreatedAt=now();_,err:=d.db.Exec(`INSERT INTO notifications(id,title,body,url,icon,channel,sent_count,click_count,created_at)VALUES(?,?,?,?,?,?,?,?,?)`,e.ID,e.Title,e.Body,e.URL,e.Icon,e.Channel,e.SentCount,e.ClickCount,e.CreatedAt);return err}
 func(d *DB)Get(id string)*Notification{var e Notification;if d.db.QueryRow(`SELECT id,title,body,url,icon,channel,sent_count,click_count,created_at FROM notifications WHERE id=?`,id).Scan(&e.ID,&e.Title,&e.Body,&e.URL,&e.Icon,&e.Channel,&e.SentCount,&e.ClickCount,&e.CreatedAt)!=nil{return nil};return &e}
 func(d *DB)List()[]Notification{rows,_:=d.db.Query(`SELECT id,title,body,url,icon,channel,sent_count,click_count,created_at FROM notifications ORDER BY created_at DESC`);if rows==nil{return nil};defer rows.Close();var o []Notification;for rows.Next(){var e Notification;rows.Scan(&e.ID,&e.Title,&e.Body,&e.URL,&e.Icon,&e.Channel,&e.SentCount,&e.ClickCount,&e.CreatedAt);o=append(o,e)};return o}
+func(d *DB)Update(e *Notification)error{_,err:=d.db.Exec(`UPDATE notifications SET title=?,body=?,url=?,icon=?,channel=?,sent_count=?,click_count=? WHERE id=?`,e.Title,e.Body,e.URL,e.Icon,e.Channel,e.SentCount,e.ClickCount,e.ID);return err}
 func(d *DB)Delete(id string)error{_,err:=d.db.Exec(`DELETE FROM notifications WHERE id=?`,id);return err}
 func(d *DB)Count()int{var n int;d.db.QueryRow(`SELECT COUNT(*) FROM notifications`).Scan(&n);return n}
+
+func(d *DB)Search(q string, filters map[string]string)[]Notification{
+    where:="1=1"
+    args:=[]any{}
+    if q!=""{
+        where+=" AND (title LIKE ? OR body LIKE ?)"
+        args=append(args,"%"+q+"%");args=append(args,"%"+q+"%");
+    }
+    if v,ok:=filters["channel"];ok&&v!=""{where+=" AND channel=?";args=append(args,v)}
+    rows,_:=d.db.Query(`SELECT id,title,body,url,icon,channel,sent_count,click_count,created_at FROM notifications WHERE `+where+` ORDER BY created_at DESC`,args...)
+    if rows==nil{return nil};defer rows.Close()
+    var o []Notification;for rows.Next(){var e Notification;rows.Scan(&e.ID,&e.Title,&e.Body,&e.URL,&e.Icon,&e.Channel,&e.SentCount,&e.ClickCount,&e.CreatedAt);o=append(o,e)};return o
+}
+
+func(d *DB)Stats()map[string]any{
+    m:=map[string]any{"total":d.Count()}
+    return m
+}
