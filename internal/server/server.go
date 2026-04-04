@@ -34,6 +34,7 @@ patch.Body=existing.Body};if patch.URL==""{
 patch.URL=existing.URL};if patch.Icon==""{
 patch.Icon=existing.Icon};if patch.Channel==""{
 patch.Channel=existing.Channel}
+    if patch.SentCount==0{patch.SentCount=existing.SentCount};if patch.ClickCount==0{patch.ClickCount=existing.ClickCount}
     s.db.Update(&patch);wj(w,200,s.db.Get(patch.ID))
 }
 func(s *Server)del(w http.ResponseWriter,r *http.Request){s.db.Delete(r.PathValue("id"));wj(w,200,map[string]string{"deleted":"ok"})}
